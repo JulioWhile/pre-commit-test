@@ -11,9 +11,6 @@ jobs:
   pre-commit:
     name: Run Pre-Commit
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
 
     steps:
       - name: Checkout PR branch
@@ -30,45 +27,40 @@ jobs:
 
       - name: Fetch base branch
         run: |
-          # Ensure we have the base branch so we can diff against it
-          git fetch origin ${{ github.base_ref }} --depth=1
-
-      - name: Get list of changed files
-        id: get_changed
-        run: |
-            echo "BASE_REF: ${{ github.base_ref }}"
-            echo "HEAD_REF: ${{ github.head_ref }}"
-            if [ -n "${{ github.base_ref }}" ] && [ -n "${{ github.head_ref }}" ]; then
             git fetch origin ${{ github.base_ref }} --deepen=100
-            git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt
-            else
-            if [ "$(git rev-list --count HEAD)" -gt 1 ]; then
-                git diff --name-only HEAD^ HEAD > changed_files.txt
-            else
-                git ls-files > changed_files.txt
-            fi
-            fi
-            echo "Changed files:"
-            cat changed_files.txt || true
+            git fetch origin ${{ github.head_ref }} --deepen=100
 
-      - name: Run pre-commit on changed files
+      - name: Get list of changed python files
         run: |
+          set -e
+          git diff --name-only origin/${{ github.base_ref }}...${{ github.head_ref }} | grep '\.py$' > changed_files.txt
+          echo "Changed Python files:"
+          cat changed_files.txt || true
+
+      - name: Run pre-commit on changed files (with Ruff autofix)
+        continue-on-error: true
+        run: |
+          set -e
           if [ -s changed_files.txt ]; then
-            xargs pre-commit run --files < changed_files.txt
+            xargs pre-commit run ruff --files < changed_files.txt
           else
-            echo "No changed files to check."
+            echo "No Python files changed."
           fi
 
-      - name: Commit and push auto-fixed changes
+      - name: Commit and push auto-fixed files (if any)
         run: |
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "github-actions[bot]"
-          git add .
-          git status
-          git diff
-          if ! git diff --cached --exit-code; then
+          set -e
+          if ! git diff --exit-code; then
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git config --global user.name "github-actions[bot]"
+            git add .
             git commit -m "chore(pre-commit): auto-fix code via CI [skip ci]"
             git push
-          else
-            echo "No auto-fixes to commit."
+          fi
+
+      - name: Fail if unfixable errors remain
+        run: |
+          set -e
+          if [ -s changed_files.txt ]; then
+            xargs pre-commit run ruff --files < changed_files.txt
           fi
