@@ -4,14 +4,13 @@ on:
   pull_request:
   push:
 
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
   pre-commit:
     name: Run Pre-Commit
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout PR branch
@@ -20,54 +19,21 @@ jobs:
           ref: ${{ github.head_ref || github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Python
+      - name: Install Python
         uses: actions/setup-python@v4
-
+      
       - name: Install Pre-Commit
         run: pip install pre-commit
 
-      - name: Check if last commit was auto-fix
-        id: autofix
-        run: |
-          if git log -1 --pretty=%B | grep -q "auto-fix code via CI"; then
-            echo "autofix=true" >> $GITHUB_OUTPUT
-          else
-            echo "autofix=false" >> $GITHUB_OUTPUT
-          fi
+      - name: Run pre-commit
+        run: pre-commit run
 
-      - name: Run pre-commit on all files (with Ruff autofix)
-        if: steps.autofix.outputs.autofix == 'false'
-        continue-on-error: true
+      - name: Commit and push auto-fixed changes
         run: |
-          pre-commit run --all-files --show-diff-on-failure
-
-      - name: Commit and push auto-fixed files (if any)
-        if: steps.autofix.outputs.autofix == 'false'
-        run: |
-          set -e
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
           if ! git diff --exit-code; then
-            git config --global user.email "github-actions[bot]@users.noreply.github.com"
-            git config --global user.name "github-actions[bot]"
             git add .
-            git commit -m "chore(pre-commit): auto-fix code via CI"
+            git commit -m "chore(pre-commit): auto-fix code via CI [skip ci]"
             git push
-            echo "============================================"
-            echo "Auto-fix commit pushed!"
-            echo "Please run:"
-            echo "  git pull"
-            echo "  git push"
-            echo "to re-trigger the CI on the latest code."
-            echo "============================================"
-            exit 1
           fi
-
-      - name: Fail if unfixable errors remain
-        if: steps.autofix.outputs.autofix == 'false'
-        run: |
-          pre-commit run --all-files --show-diff-on-failure
-
-      - name: Stop (already auto-fixed)
-        if: steps.autofix.outputs.autofix == 'true'
-        run: |
-          echo "Auto-fix commit already present. Please pull and push to re-run checks."
-          exit 1
