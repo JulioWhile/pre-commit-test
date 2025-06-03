@@ -33,9 +33,17 @@ jobs:
       - name: Get list of changed files
         id: get_changed
         run: |
-          git diff --name-only origin/${{ github.base_ref }}...${{ github.head_ref }} > changed_files.txt
-          echo "Changed files:"
-          cat changed_files.txt || true
+            echo "BASE_REF: ${{ github.base_ref }}"
+            echo "HEAD_REF: ${{ github.head_ref }}"
+            if [ -n "${{ github.base_ref }}" ] && [ -n "${{ github.head_ref }}" ]; then
+            git fetch origin ${{ github.base_ref }} --depth=1
+            git diff --name-only origin/${{ github.base_ref }}...${{ github.head_ref }} > changed_files.txt
+            else
+            # fallback for non-PR events, compare last commit
+            git diff --name-only HEAD^ HEAD > changed_files.txt
+            fi
+            echo "Changed files:"
+            cat changed_files.txt || true
 
       - name: Run pre-commit on changed files
         run: |
