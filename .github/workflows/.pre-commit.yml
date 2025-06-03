@@ -9,21 +9,18 @@ permissions:
   pull-requests: write
 
 jobs:
-  pre-commit:
+  autofix:
     runs-on: ubuntu-latest
-
+    outputs:
+      did_fix: ${{ steps.did-fix.outputs.did_fix }}
     steps:
-      - name: Checkout PR branch
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref || github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-
-      - name: Install Pre-Commit
-        run: pip install pre-commit
+      - uses: actions/setup-python@v4
+      - run: pip install pre-commit
 
       - name: Get changed Python files
         id: changed-files
@@ -34,8 +31,7 @@ jobs:
           echo "Changed Python files:"
           cat changed_files.txt || true
 
-      - name: Run Ruff autofix via pre-commit (on changed files)
-        continue-on-error: true
+      - name: Ruff autofix via pre-commit (on changed files)
         run: |
           if [ -s changed_files.txt ]; then
             xargs pre-commit run ruff --files < changed_files.txt
@@ -44,6 +40,7 @@ jobs:
           fi
 
       - name: Commit and push auto-fixed files (if any)
+        id: did-fix
         run: |
           if ! git diff --exit-code; then
             git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -51,9 +48,32 @@ jobs:
             git add .
             git commit -m "chore(pre-commit): auto-fix code via CI [skip ci]"
             git push
+            echo "did_fix=true" >> $GITHUB_OUTPUT
+          else
+            echo "did_fix=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Run Ruff lint (no autofix, fail if errors remain)
+  lint:
+    needs: autofix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v4
+      - run: pip install pre-commit
+
+      - name: Get changed Python files
+        run: |
+          git fetch origin ${{ github.base_ref }} --deepen=100 || true
+          git fetch origin ${{ github.head_ref }} --deepen=100 || true
+          git diff --name-only origin/${{ github.base_ref }}...${{ github.head_ref }} | grep '\.py$' > changed_files.txt || true
+          echo "Changed Python files:"
+          cat changed_files.txt || true
+
+      - name: Ruff lint (fail if errors remain)
         run: |
           if [ -s changed_files.txt ]; then
             xargs pre-commit run ruff --files < changed_files.txt
