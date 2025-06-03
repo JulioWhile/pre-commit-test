@@ -5,11 +5,13 @@ on:
     branches: [main, develop]
 
 jobs:
-  pre-commit-check:
+  quality-check:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Important for getting full git history
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -22,42 +24,45 @@ jobs:
       - name: Get changed files (for PR)
         if: github.event_name == 'pull_request'
         run: |
-          git fetch origin ${{ github.base_ref }} --deepen=100
+          git fetch origin ${{ github.base_ref }}
           git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt
           grep -E '\.(py|yml|yaml|json|csv)$' changed_files.txt > filtered_files.txt || true
 
-      - name: Get changed files (for push to main/develop)
+      - name: Get changed files (for push)
         if: github.event_name == 'push'
         run: |
           git diff --name-only HEAD~1 HEAD > changed_files.txt
           grep -E '\.(py|yml|yaml|json|csv)$' changed_files.txt > filtered_files.txt || true
 
+      - name: Debug - Show files to check
+        run: |
+          echo "Changed files:"
+          cat changed_files.txt || echo "No changed_files.txt"
+          echo ""
+          echo "Filtered files for pre-commit:"
+          cat filtered_files.txt || echo "No filtered_files.txt"
+
       - name: Run pre-commit checks
         run: |
           if [ -s filtered_files.txt ]; then
-            echo "🔍 Running pre-commit checks..."
-            echo "Files to check:"
-            cat filtered_files.txt
-            echo ""
+            echo "🔍 Running pre-commit checks on changed files..."
             
-            if xargs pre-commit run --files < filtered_files.txt; then
+            # Force pre-commit to run without cache to avoid "skipped" issues
+            export PRE_COMMIT_NO_CACHE=1
+            
+            # Run with verbose output to see what's happening
+            if xargs pre-commit run --verbose --files < filtered_files.txt; then
               echo "✅ All pre-commit checks passed!"
             else
               echo ""
               echo "❌ Pre-commit checks failed!"
               echo ""
-              echo "To fix these issues locally:"
-              echo "1. Install pre-commit: pip install pre-commit"
-              echo "2. Install hooks: pre-commit install"
-              echo "3. Run on your changed files only:"
+              echo "To fix locally, run:"
               if [ "${{ github.event_name }}" == "pull_request" ]; then
-                echo "   pre-commit run --files \$(git diff --name-only origin/${{ github.base_ref }}...HEAD)"
+                echo "  pre-commit run --files \$(git diff --name-only origin/${{ github.base_ref }}...HEAD)"
               else
-                echo "   pre-commit run --files \$(git diff --name-only HEAD~1 HEAD)"
+                echo "  pre-commit run --files \$(git diff --name-only HEAD~1 HEAD)"
               fi
-              echo "4. Commit and push the fixes"
-              echo ""
-              echo "Most issues can be auto-fixed. Commit the changes and push again."
               exit 1
             fi
           else
