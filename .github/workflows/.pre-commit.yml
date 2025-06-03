@@ -1,23 +1,15 @@
-name: Pre-Commit Auto-fix on Changed Files
+name: Pre-Commit Quality Gate
 on:
   pull_request:
+  push:
+    branches: [main, develop]
 
 jobs:
-  pre-commit:
+  pre-commit-check:
     runs-on: ubuntu-latest
     steps:
-      - name: Generate GitHub App Token
-        id: generate_token
-        uses: tibdex/github-app-token@v1
-        with:
-          app_id: ${{ secrets.APP_ID }}
-          private_key: ${{ secrets.APP_PRIVATE_KEY }}
-
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
-          token: ${{ steps.generate_token.outputs.token }}
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -27,43 +19,78 @@ jobs:
       - name: Install pre-commit
         run: pip install pre-commit
 
-      - name: Fetch base and head branches
+      - name: Get changed files (for PR)
+        if: github.event_name == 'pull_request'
         run: |
           git fetch origin ${{ github.base_ref }} --deepen=100
-          git fetch origin ${{ github.head_ref }} --deepen=100
-
-      - name: Get list of changed files
-        run: |
-          if [ -n "${{ github.base_ref }}" ] && [ -n "${{ github.head_ref }}" ]; then
-            git diff --name-only origin/${{ github.base_ref }}...origin/${{ github.head_ref }} > changed_files.txt
-          else
-            git diff --name-only HEAD^ HEAD > changed_files.txt
-          fi
+          git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt
           grep -E '\.(py|yml|yaml|json|csv)$' changed_files.txt > filtered_files.txt || true
-          cat filtered_files.txt
 
-      - name: Run pre-commit auto-fix on changed files
+      - name: Get all files (for push to main/develop)
+        if: github.event_name == 'push'
+        run: |
+          find . -name "*.py" -o -name "*.yml" -o -name "*.yaml" -o -name "*.json" -o -name "*.csv" | grep -v ".git" > filtered_files.txt || true
+
+      - name: Run pre-commit checks
         run: |
           if [ -s filtered_files.txt ]; then
-            xargs pre-commit run --files < filtered_files.txt || true
+            echo "🔍 Running pre-commit checks..."
+            echo "Files to check:"
+            cat filtered_files.txt
+            echo ""
+            
+            if xargs pre-commit run --files < filtered_files.txt; then
+              echo "✅ All pre-commit checks passed!"
+            else
+              echo ""
+              echo "❌ Pre-commit checks failed!"
+              echo ""
+              echo "To fix these issues locally:"
+              echo "1. Install pre-commit: pip install pre-commit"
+              echo "2. Install hooks: pre-commit install"
+              echo "3. Run on your files: pre-commit run --files <file1> <file2> ..."
+              echo "4. Or run on all files: pre-commit run --all-files"
+              echo ""
+              echo "Most issues can be auto-fixed. Commit the changes and push again."
+              exit 1
+            fi
           else
-            echo "No files to check."
+            echo "ℹ️  No relevant files to check."
           fi
 
-      - name: Commit and push fixes if any
-        run: |
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "github-actions[bot]"
-          if ! git diff --exit-code; then
-            git add .
-            git commit -m "chore(pre-commit): auto-fix changed files via CI"
-            git push
-          fi
-
-      - name: Final pre-commit check on changed files
-        run: |
-          if [ -s filtered_files.txt ]; then
-            xargs pre-commit run --files < filtered_files.txt
-          else
-            echo "No files to check."
-          fi
+  # Optional: Add a job that provides helpful PR comments
+  pr-comment:
+    runs-on: ubuntu-latest
+    needs: pre-commit-check
+    if: failure() && github.event_name == 'pull_request'
+    steps:
+      - name: Comment on PR
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ❌ Pre-commit checks failed
+              
+              Please fix the code quality issues by running these commands locally:
+              
+              \`\`\`bash
+              # Install pre-commit if not already installed
+              pip install pre-commit
+              
+              # Install the hooks
+              pre-commit install
+              
+              # Run pre-commit on all changed files (this will auto-fix most issues)
+              pre-commit run --all-files
+              
+              # Commit and push the fixes
+              git add .
+              git commit -m "fix: apply pre-commit auto-fixes"
+              git push
+              \`\`\`
+              
+              Most formatting issues will be automatically fixed. Please commit and push the changes.`
+            })
