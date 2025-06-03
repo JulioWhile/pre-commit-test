@@ -11,9 +11,6 @@ jobs:
   pre-commit:
     name: Run Pre-Commit
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
 
     steps:
       - name: Checkout PR branch
@@ -29,38 +26,38 @@ jobs:
         run: pip install pre-commit
 
       - name: Fetch base branch
-        run: |
-          # Ensure we have the base branch so we can diff against it
-          git fetch origin ${{ github.base_ref }} --depth=1
+        run: git fetch origin ${{ github.base_ref }} --depth=1
 
       - name: Get list of changed python files
         run: |
-            git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
-            git diff --name-only origin/${{ github.base_ref }}...${{ github.head_ref }} | grep '\.py$' > changed_files.txt
-
-            echo "Changed Python files:"
-            cat changed_files.txt || true
+          set -e
+          git diff --name-only origin/${{ github.base_ref }}...${{ github.head_ref }} | grep '\.py$' > changed_files.txt
+          echo "Changed Python files:"
+          cat changed_files.txt || true
 
       - name: Run pre-commit on changed files (with Ruff autofix)
         run: |
-            if [ -s changed_files.txt ]; then
+          set -e
+          if [ -s changed_files.txt ]; then
             xargs pre-commit run ruff --files < changed_files.txt
-            else
+          else
             echo "No Python files changed."
-            fi
+          fi
 
       - name: Commit and push auto-fixed files (if any)
         run: |
-            if ! git diff --exit-code; then
+          set -e
+          if ! git diff --exit-code; then
             git config --global user.email "github-actions[bot]@users.noreply.github.com"
             git config --global user.name "github-actions[bot]"
             git add .
             git commit -m "chore(pre-commit): auto-fix code via CI [skip ci]"
             git push
-            fi
+          fi
 
       - name: Fail if unfixable errors remain
         run: |
-            if [ -s changed_files.txt ]; then
+          set -e
+          if [ -s changed_files.txt ]; then
             xargs pre-commit run ruff --files < changed_files.txt
-            fi
+          fi
