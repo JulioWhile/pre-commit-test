@@ -30,7 +30,7 @@ jobs:
         if: github.event_name == 'push'
         run: |
           git diff --name-only HEAD~1 HEAD > changed_files.txt
-          grep -E '\.(py|yml|yaml|json|csv)
+          grep -E '\.(py|yml|yaml|json|csv)$' changed_files.txt > filtered_files.txt || true
 
       - name: Run pre-commit checks
         run: |
@@ -56,70 +56,6 @@ jobs:
                 echo "   pre-commit run --files \$(git diff --name-only HEAD~1 HEAD)"
               fi
               echo "4. Commit and push the fixes"
-              echo ""
-              echo "Most issues can be auto-fixed. Commit the changes and push again."
-              exit 1
-            fi
-          else
-            echo "ℹ️  No relevant files to check."
-          fi
-
-  # Optional: Add a job that provides helpful PR comments
-  pr-comment:
-    runs-on: ubuntu-latest
-    needs: pre-commit-check
-    if: failure() && github.event_name == 'pull_request'
-    steps:
-      - name: Comment on PR
-        uses: actions/github-script@v6
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `## ❌ Pre-commit checks failed
-              
-              Please fix the code quality issues by running these commands locally:
-              
-              \`\`\`bash
-              # Install pre-commit if not already installed
-              pip install pre-commit
-              
-              # Install the hooks
-              pre-commit install
-              
-              # Run pre-commit ONLY on files you changed (this will auto-fix most issues)
-              pre-commit run --files \$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
-              
-              # Commit and push the fixes
-              git add .
-              git commit -m "fix: apply pre-commit fixes to changed files"
-              git push
-              \`\`\`
-              
-              Most formatting issues will be automatically fixed. Please commit and push the changes.`
-            }) changed_files.txt > filtered_files.txt || true
-
-      - name: Run pre-commit checks
-        run: |
-          if [ -s filtered_files.txt ]; then
-            echo "🔍 Running pre-commit checks..."
-            echo "Files to check:"
-            cat filtered_files.txt
-            echo ""
-            
-            if xargs pre-commit run --files < filtered_files.txt; then
-              echo "✅ All pre-commit checks passed!"
-            else
-              echo ""
-              echo "❌ Pre-commit checks failed!"
-              echo ""
-              echo "To fix these issues locally:"
-              echo "1. Install pre-commit: pip install pre-commit"
-              echo "2. Install hooks: pre-commit install"
-              echo "3. Run on your files: pre-commit run --files <file1> <file2> ..."
-              echo "4. Or run on all files: pre-commit run --all-files"
               echo ""
               echo "Most issues can be auto-fixed. Commit the changes and push again."
               exit 1
