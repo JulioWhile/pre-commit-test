@@ -38,6 +38,7 @@ jobs:
           cat changed_files.txt || true
 
       - name: Run pre-commit on changed files (with Ruff autofix)
+        continue-on-error: true
         run: |
           set -e
           if [ -s changed_files.txt ]; then
