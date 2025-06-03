@@ -1,15 +1,14 @@
-name: Pre-Commit Auto-fix
+name: Pre-Commit Auto-fix and Validate
 on:
   pull_request:
-    types: [opened, synchronize]
 jobs:
-  auto-fix:
+  pre-commit:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref || github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -17,29 +16,76 @@ jobs:
           python-version: "3.11"
       - name: Install pre-commit
         run: pip install pre-commit
-      - name: Get changed files
+      - name: Fetch base and head branches
         run: |
           git fetch origin ${{ github.base_ref }} --deepen=100
-          git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt
+          git fetch origin ${{ github.head_ref }} --deepen=100
+      - name: Get list of changed files
+        id: changed-files
+        run: |
+          if [ -n "${{ github.base_ref }}" ] && [ -n "${{ github.head_ref }}" ]; then
+            git diff --name-only origin/${{ github.base_ref }}...origin/${{ github.head_ref }} > changed_files.txt
+          else
+            git diff --name-only HEAD^ HEAD > changed_files.txt
+          fi
           grep -E '\.(py|yml|yaml|json|csv)$' changed_files.txt > filtered_files.txt || true
           cat filtered_files.txt
-      - name: Run pre-commit auto-fix
+      
+      # First attempt: try to auto-fix
+      - name: Run pre-commit auto-fix (attempt 1)
+        id: first-attempt
         run: |
           if [ -s filtered_files.txt ]; then
-            echo "Running pre-commit auto-fix..."
-            xargs pre-commit run --files < filtered_files.txt || true
+            if xargs pre-commit run --files < filtered_files.txt; then
+              echo "FIRST_ATTEMPT_PASSED=true" >> $GITHUB_ENV
+              echo "All checks passed on first attempt!"
+            else
+              echo "FIRST_ATTEMPT_PASSED=false" >> $GITHUB_ENV
+              echo "Issues found, attempting auto-fix..."
+            fi
           else
+            echo "FIRST_ATTEMPT_PASSED=true" >> $GITHUB_ENV
             echo "No files to check."
           fi
-      - name: Commit and push fixes if any
+      
+      # Commit fixes if first attempt failed
+      - name: Commit auto-fixes
+        if: env.FIRST_ATTEMPT_PASSED == 'false'
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
           if ! git diff --exit-code; then
             git add .
-            git commit -m "chore(pre-commit): auto-fix changed files via CI"
+            git commit -m "chore(pre-commit): auto-fix changed files via CI [skip ci]"
             git push
-            echo "Fixes applied and pushed!"
+            echo "FIXES_COMMITTED=true" >> $GITHUB_ENV
           else
-            echo "No fixes needed."
+            echo "FIXES_COMMITTED=false" >> $GITHUB_ENV
+          fi
+      
+      # Second attempt: validate after auto-fix
+      - name: Run pre-commit validation (attempt 2)
+        if: env.FIRST_ATTEMPT_PASSED == 'false'
+        run: |
+          if [ -s filtered_files.txt ]; then
+            echo "Validating after auto-fix..."
+            if xargs pre-commit run --files < filtered_files.txt; then
+              echo "✅ All issues have been auto-fixed!"
+            else
+              echo "❌ Some issues could not be auto-fixed. Manual intervention required."
+              echo "Please run 'pre-commit run --files [affected-files]' locally and commit the fixes."
+              exit 1
+            fi
+          fi
+      
+      # Summary
+      - name: Summary
+        if: always()
+        run: |
+          if [ "$FIRST_ATTEMPT_PASSED" == "true" ]; then
+            echo "✅ Pre-commit checks passed on first attempt!"
+          elif [ "$FIXES_COMMITTED" == "true" ]; then
+            echo "🔧 Auto-fixes were applied and validated successfully!"
+          else
+            echo "⚠️  Manual fixes required - check the logs above."
           fi
