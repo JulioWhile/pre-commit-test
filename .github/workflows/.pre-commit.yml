@@ -2,15 +2,15 @@ name: Pre-Commit Checks
 
 on:
   pull_request:
-  push:
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
   pre-commit:
     name: Run Pre-Commit
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
 
     steps:
       - name: Checkout PR branch
@@ -18,24 +18,30 @@ jobs:
         with:
           ref: ${{ github.head_ref || github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          persist-credentials: true
 
-
-      - name: Install Python
+      - name: Set up Python
         uses: actions/setup-python@v4
-      
+
       - name: Install Pre-Commit
         run: pip install pre-commit
 
-      - name: Run pre-commit
-        run: pre-commit run
-
-      - name: Commit and push auto-fixed changes
+      - name: Fetch base and head branches with enough history
         run: |
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "github-actions[bot]"
-          if ! git diff --exit-code; then
-            git add .
-            git commit -m "chore(pre-commit): auto-fix code via CI [skip ci]"
-            git push
+          git fetch origin ${{ github.base_ref }} --deepen=100
+          git fetch origin ${{ github.head_ref }} --deepen=100
+
+      - name: Get list of changed python files
+        run: |
+          set -e
+          git diff --name-only origin/${{ github.base_ref }}...${{ github.head_ref }} | grep '\.py$' > changed_files.txt
+          echo "Changed Python files:"
+          cat changed_files.txt || true
+
+      - name: Run pre-commit check on changed files (no auto-fix)
+        run: |
+          set -e
+          if [ -s changed_files.txt ]; then
+            xargs pre-commit run ruff --files < changed_files.txt
+          else
+            echo "No Python files changed."
           fi
