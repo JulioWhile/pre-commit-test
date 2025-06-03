@@ -1,7 +1,8 @@
 name: Pre-Commit Checks
 
 on:
-  workflow_call: {}
+  pull_request:
+  push:
 
 jobs:
   pre-commit:
