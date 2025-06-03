@@ -63,8 +63,12 @@ jobs:
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-          if ! git diff --exit-code; then
-            git add .
+          git add .
+          git status
+          git diff
+          if ! git diff --cached --exit-code; then
             git commit -m "chore(pre-commit): auto-fix code via CI [skip ci]"
             git push
+          else
+            echo "No auto-fixes to commit."
           fi
