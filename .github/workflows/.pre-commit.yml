@@ -28,8 +28,8 @@ jobs:
 
       - name: Fetch base branch
         run: |
-            git fetch origin ${{ github.base_ref }} --deepen=100
-            git fetch origin ${{ github.head_ref }} --deepen=100
+          git fetch origin ${{ github.base_ref }} --deepen=100
+          git fetch origin ${{ github.head_ref }} --deepen=100
 
       - name: Get list of changed python files
         run: |
@@ -38,7 +38,17 @@ jobs:
           echo "Changed Python files:"
           cat changed_files.txt || true
 
+      - name: Check if this is an auto-fix commit
+        id: check_autofix
+        run: |
+          if git log -1 --pretty=%B | grep -q 'auto-fix code via CI'; then
+            echo "autofix=true" >> $GITHUB_OUTPUT
+          else
+            echo "autofix=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run pre-commit on changed files (with Ruff autofix)
+        if: steps.check_autofix.outputs.autofix == 'false'
         continue-on-error: true
         run: |
           set -e
@@ -49,6 +59,7 @@ jobs:
           fi
 
       - name: Commit and push auto-fixed files (if any)
+        if: steps.check_autofix.outputs.autofix == 'false'
         run: |
           set -e
           if ! git diff --exit-code; then
@@ -57,15 +68,22 @@ jobs:
             git add .
             git commit -m "chore(pre-commit): auto-fix code via CI [skip ci]"
             git push
+            echo "Auto-fix commit pushed. Exiting so new workflow run checks it."
+            exit 1
           fi
 
       - name: Fail if unfixable errors remain (final Ruff run)
+        if: steps.check_autofix.outputs.autofix == 'false'
         run: |
           set -e
           if [ -s changed_files.txt ]; then
-            # Pull the latest files (in case of auto-fix commit)
             git fetch origin ${{ github.head_ref }}
             git checkout ${{ github.head_ref }}
-            # Now re-run Ruff on the changed files, WITHOUT --fix
             xargs pre-commit run ruff --files < changed_files.txt
           fi
+
+      # If this is an autofix commit, skip everything and let the next run handle it
+      - name: Skip for autofix commit
+        if: steps.check_autofix.outputs.autofix == 'true'
+        run: |
+          echo "This is an auto-fix commit. Skipping workflow. Wait for next run."
