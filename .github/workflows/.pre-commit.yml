@@ -52,13 +52,13 @@ jobs:
         run: |
           if [ -s filtered_files.txt ]; then
             echo "🔍 Running pre-commit checks on changed files..."
-            
+
             # Force pre-commit to run without cache to avoid "skipped" issues
             export PRE_COMMIT_NO_CACHE=1
-            
+
             # Capture output for PR comment
             echo "files_checked=true" >> $GITHUB_OUTPUT
-            
+
             # Run with verbose output and capture both stdout and stderr
             if xargs pre-commit run --verbose --files < filtered_files.txt > precommit_output.txt 2>&1; then
               echo "result=success" >> $GITHUB_OUTPUT
@@ -87,7 +87,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            
+
             // Read the list of checked files
             let checkedFiles = '';
             try {
@@ -95,11 +95,11 @@ jobs:
             } catch (e) {
               checkedFiles = 'Unable to read file list';
             }
-            
+
             const fileCount = checkedFiles.split('\n').filter(f => f.trim()).length;
-            
+
             const comment = `## ✅ Pre-commit Quality Checks Passed!
-            
+
             **Files checked:** ${fileCount} file(s)
             \`\`\`
             ${checkedFiles}
@@ -113,11 +113,11 @@ jobs:
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            
-            const existingComment = comments.find(comment => 
+
+            const existingComment = comments.find(comment =>
               comment.body.includes('Pre-commit Quality Checks')
             );
-            
+
             if (existingComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
@@ -140,7 +140,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            
+
             // Read the output from pre-commit
             let output = '';
             try {
@@ -148,7 +148,7 @@ jobs:
             } catch (e) {
               output = 'Unable to read pre-commit output';
             }
-            
+
             // Read the list of checked files
             let checkedFiles = '';
             try {
@@ -156,11 +156,11 @@ jobs:
             } catch (e) {
               checkedFiles = 'Unable to read file list';
             }
-            
+
             const fileCount = checkedFiles.split('\n').filter(f => f.trim()).length;
-            
+
             const comment = `## ❌ Pre-commit Quality Checks Failed
-            
+
             **Files checked:** ${fileCount} file(s)
 
             ### 🔧 How to fix locally:
@@ -194,11 +194,11 @@ jobs:
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            
-            const existingComment = comments.find(comment => 
+
+            const existingComment = comments.find(comment =>
               comment.body.includes('Pre-commit Quality Checks')
             );
-            
+
             if (existingComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
@@ -221,7 +221,7 @@ jobs:
         with:
           script: |
             const comment = `## ℹ️ Pre-commit Quality Checks - No Relevant Files
-            
+
             No Python, YAML, JSON, or CSV files were changed in this PR.
             Quality checks were skipped. ✨`;
 
@@ -231,11 +231,11 @@ jobs:
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            
-            const existingComment = comments.find(comment => 
+
+            const existingComment = comments.find(comment =>
               comment.body.includes('Pre-commit Quality Checks')
             );
-            
+
             if (existingComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
