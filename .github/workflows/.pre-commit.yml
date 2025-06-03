@@ -1,16 +1,10 @@
-name: Pre-Commit Checks
+name: Pre-Commit Auto-Fix
 
 on:
   pull_request:
-  push:
-
-permissions:
-  contents: write
-  pull-requests: write
 
 jobs:
-  pre-commit:
-    name: Run Pre-Commit
+  pre-commit-auto-fix:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,43 +16,22 @@ jobs:
 
       - name: Set up Python
         uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
 
-      - name: Install Pre-Commit
-        run: pip install pre-commit
-
-      - name: Fetch base and head branches
+      - name: Install pre-commit and dependencies
         run: |
-          git fetch origin ${{ github.base_ref }} --deepen=100 || true
-          git fetch origin ${{ github.head_ref }} --deepen=100 || true
+          pip install pre-commit
 
-      - name: Get list of changed Python files
-        run: |
-          git diff --name-only origin/${{ github.base_ref }}...${{ github.head_ref }} | grep '\.py$' > changed_files.txt || true
-          echo "Changed Python files:"
-          cat changed_files.txt || true
+      - name: Run pre-commit (auto-fix where possible)
+        run: pre-commit run --all-files
 
-      - name: Run Ruff autofix via pre-commit (on changed files)
-        id: ruff_autofix
-        continue-on-error: true  # allow commit even if Ruff makes fixes
+      - name: Commit and push fixes if any
         run: |
-          if [ -s changed_files.txt ]; then
-            xargs pre-commit run ruff --files < changed_files.txt
-          else
-            echo "No Python files changed."
-          fi
-
-      - name: Commit and push auto-fixed files (if any)
-        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
           if ! git diff --exit-code; then
-            git config --global user.email "github-actions[bot]@users.noreply.github.com"
-            git config --global user.name "github-actions[bot]"
             git add .
-            git commit -m "chore(pre-commit): auto-fix code via CI [skip ci]"
+            git commit -m "chore(pre-commit): auto-fix via CI"
             git push
-          fi
-
-      - name: Run Ruff lint (fail if errors remain)
-        run: |
-          if [ -s changed_files.txt ]; then
-            xargs pre-commit run ruff --files < changed_files.txt
           fi
