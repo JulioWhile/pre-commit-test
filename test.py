@@ -1,6 +1,3 @@
-import os, sys # E401: multiple imports on one line
-import math
-import json
 
 def foo( a,  b ):
     c =  1
