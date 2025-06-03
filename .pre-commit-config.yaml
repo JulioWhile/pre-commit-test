@@ -3,5 +3,15 @@ repos:
     rev: v0.4.4
     hooks:
       - id: ruff
-        args: [--fix]
-      - id: ruff-format
+        args: [--fix]  # Enable auto-fixing with Ruff
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: no-commit-to-branch
+        args: ["--branch", "develop", "--branch", "master"]
