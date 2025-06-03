@@ -2,7 +2,10 @@ name: Pre-Commit Checks
 
 on:
   pull_request:
-  push:
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   pre-commit:
@@ -36,12 +39,14 @@ jobs:
             echo "BASE_REF: ${{ github.base_ref }}"
             echo "HEAD_REF: ${{ github.head_ref }}"
             if [ -n "${{ github.base_ref }}" ] && [ -n "${{ github.head_ref }}" ]; then
-            # Fetch both base and head branch with enough history
-            git fetch origin ${{ github.base_ref }} ${{ github.head_ref }} --deepen=100
-            git diff --name-only origin/${{ github.base_ref }}...origin/${{ github.head_ref }} > changed_files.txt
+            git fetch origin ${{ github.base_ref }} --deepen=100
+            git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt
             else
-            # fallback for non-PR events, compare last commit
-            git diff --name-only HEAD^ HEAD > changed_files.txt
+            if [ "$(git rev-list --count HEAD)" -gt 1 ]; then
+                git diff --name-only HEAD^ HEAD > changed_files.txt
+            else
+                git ls-files > changed_files.txt
+            fi
             fi
             echo "Changed files:"
             cat changed_files.txt || true
