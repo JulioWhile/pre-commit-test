@@ -58,9 +58,13 @@ jobs:
             git push
           fi
 
-      - name: Fail if unfixable errors remain
+      - name: Fail if unfixable errors remain (final Ruff run)
         run: |
           set -e
           if [ -s changed_files.txt ]; then
+            # Pull the latest files (in case of auto-fix commit)
+            git fetch origin ${{ github.head_ref }}
+            git checkout ${{ github.head_ref }}
+            # Now re-run Ruff on the changed files, WITHOUT --fix
             xargs pre-commit run ruff --files < changed_files.txt
           fi
