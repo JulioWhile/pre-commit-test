@@ -14,12 +14,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Skip if bot commit
-        if: contains(github.event.head_commit.message, '[skip pre-commit]')
-        run: |
-          echo "Skipping run for bot auto-fix commit."
-          exit 0
-
       - name: Checkout PR branch
         uses: actions/checkout@v4
         with:
@@ -32,46 +26,48 @@ jobs:
       - name: Install Pre-Commit
         run: pip install pre-commit
 
-      - name: Fetch base branch
+      - name: Check if last commit was auto-fix
+        id: autofix
         run: |
-          git fetch origin ${{ github.base_ref }} --deepen=100
-          git fetch origin ${{ github.head_ref }} --deepen=100
-
-      - name: Get list of changed python files
-        run: |
-          set -e
-          git diff --name-only origin/${{ github.base_ref }}...${{ github.head_ref }} | grep '\.py$' > changed_files.txt
-          echo "Changed Python files:"
-          cat changed_files.txt || true
-
-      - name: Run pre-commit on changed files (with Ruff autofix)
-        continue-on-error: true
-        run: |
-          set -e
-          if [ -s changed_files.txt ]; then
-            xargs pre-commit run ruff --files < changed_files.txt
+          if git log -1 --pretty=%B | grep -q "auto-fix code via CI"; then
+            echo "autofix=true" >> $GITHUB_OUTPUT
           else
-            echo "No Python files changed."
+            echo "autofix=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Run pre-commit on all files (with Ruff autofix)
+        if: steps.autofix.outputs.autofix == 'false'
+        continue-on-error: true
+        run: |
+          pre-commit run --all-files --show-diff-on-failure
+
       - name: Commit and push auto-fixed files (if any)
+        if: steps.autofix.outputs.autofix == 'false'
         run: |
           set -e
           if ! git diff --exit-code; then
             git config --global user.email "github-actions[bot]@users.noreply.github.com"
             git config --global user.name "github-actions[bot]"
             git add .
-            git commit -m "chore(pre-commit): auto-fix code via CI [skip pre-commit]"
+            git commit -m "chore(pre-commit): auto-fix code via CI"
             git push
+            echo "============================================"
+            echo "Auto-fix commit pushed!"
+            echo "Please run:"
+            echo "  git pull"
+            echo "  git push"
+            echo "to re-trigger the CI on the latest code."
+            echo "============================================"
+            exit 1
           fi
 
-      - name: Fail if unfixable errors remain (final Ruff run)
+      - name: Fail if unfixable errors remain
+        if: steps.autofix.outputs.autofix == 'false'
         run: |
-          set -e
-          if [ -s changed_files.txt ]; then
-            # Pull the latest files (in case of auto-fix commit)
-            git fetch origin ${{ github.head_ref }}
-            git checkout ${{ github.head_ref }}
-            # Now re-run Ruff on the changed files, WITHOUT --fix
-            xargs pre-commit run ruff --files < changed_files.txt
-          fi
+          pre-commit run --all-files --show-diff-on-failure
+
+      - name: Stop (already auto-fixed)
+        if: steps.autofix.outputs.autofix == 'true'
+        run: |
+          echo "Auto-fix commit already present. Please pull and push to re-run checks."
+          exit 1
