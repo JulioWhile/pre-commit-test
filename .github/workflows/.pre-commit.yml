@@ -1,65 +1,45 @@
-name: Pre-Commit Auto-fix on Changed Files
-
+name: Pre-Commit Auto-fix
 on:
   pull_request:
-
+    types: [opened, synchronize]
 jobs:
-  pre-commit:
+  auto-fix:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref || github.ref_name }}
+          ref: ${{ github.head_ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
-
       - name: Install pre-commit
         run: pip install pre-commit
-
-      - name: Fetch base and head branches
+      - name: Get changed files
         run: |
           git fetch origin ${{ github.base_ref }} --deepen=100
-          git fetch origin ${{ github.head_ref }} --deepen=100
-
-      - name: Get list of changed files (py, yml, yaml, json, csv)
-        id: changed-files
-        run: |
-          if [ -n "${{ github.base_ref }}" ] && [ -n "${{ github.head_ref }}" ]; then
-            git diff --name-only origin/${{ github.base_ref }}...origin/${{ github.head_ref }} > changed_files.txt
-          else
-            git diff --name-only HEAD^ HEAD > changed_files.txt
-          fi
+          git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt
           grep -E '\.(py|yml|yaml|json|csv)$' changed_files.txt > filtered_files.txt || true
           cat filtered_files.txt
-
-      - name: Run pre-commit auto-fix on changed files
+      - name: Run pre-commit auto-fix
         run: |
           if [ -s filtered_files.txt ]; then
+            echo "Running pre-commit auto-fix..."
             xargs pre-commit run --files < filtered_files.txt || true
           else
             echo "No files to check."
           fi
-
       - name: Commit and push fixes if any
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
           if ! git diff --exit-code; then
             git add .
-            git commit -m "chore(pre-commit): auto-fix changed files via CI [skip ci]"
+            git commit -m "chore(pre-commit): auto-fix changed files via CI"
             git push
-          fi
-
-      - name: Final pre-commit check on changed files (fail if issues remain)
-        run: |
-          if [ -s filtered_files.txt ]; then
-            xargs pre-commit run --files < filtered_files.txt
+            echo "Fixes applied and pushed!"
           else
-            echo "No files to check."
+            echo "No fixes needed."
           fi
