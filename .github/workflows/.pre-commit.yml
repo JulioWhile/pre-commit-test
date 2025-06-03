@@ -18,12 +18,19 @@ jobs:
       - name: Install pre-commit
         run: pip install pre-commit
 
+      - name: Fetch base and head branch with enough history
+        run: |
+          git fetch origin ${{ github.base_ref }} --deepen=100
+          git fetch origin ${{ github.head_ref }} --deepen=100
+
       - name: Get changed files
         id: files
         run: |
-          git fetch origin ${{ github.base_ref }}
-          git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '\.(py|yml|yaml|json|csv)$' > changed_files.txt
-          echo "Changed files:"
+          if [ -n "${{ github.base_ref }}" ] && [ -n "${{ github.head_ref }}" ]; then
+            git diff --name-only origin/${{ github.base_ref }}...origin/${{ github.head_ref }} > changed_files.txt
+          else
+            git diff --name-only HEAD^ HEAD > changed_files.txt
+          fi
           cat changed_files.txt
 
       - name: Run pre-commit on changed files
