@@ -32,22 +32,27 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ hashFiles('**/requirements*.txt') }}
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/pyproject.toml', '**/uv.lock', '**/requirements*.txt') }}
           restore-keys: |
             ${{ runner.os }}-uv-
 
       - name: Install dependencies
         run: |
-          # Install project dependencies if requirements.txt exists
-          if [ -f "requirements.txt" ]; then
+          # Check for pyproject.toml first (preferred)
+          if [ -f "pyproject.toml" ]; then
+            echo "📦 Installing dependencies from pyproject.toml with UV..."
+            uv sync
+          elif [ -f "requirements.txt" ]; then
             echo "📦 Installing project dependencies with UV..."
             uv pip install --system -r requirements.txt
-          fi
 
-          # Install dev dependencies if requirements-dev.txt exists
-          if [ -f "requirements-dev.txt" ]; then
-            echo "🔧 Installing dev dependencies with UV..."
-            uv pip install --system -r requirements-dev.txt
+            # Install dev dependencies if requirements-dev.txt exists
+            if [ -f "requirements-dev.txt" ]; then
+              echo "🔧 Installing dev dependencies with UV..."
+              uv pip install --system -r requirements-dev.txt
+            fi
+          else
+            echo "ℹ️ No pyproject.toml or requirements.txt found, skipping dependency installation"
           fi
 
       - name: Install pre-commit with UV

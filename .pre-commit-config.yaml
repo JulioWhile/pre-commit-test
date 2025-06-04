@@ -9,6 +9,12 @@ repos:
       - id: ruff-format
         files: \.py$
 
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    # uv version.
+    rev: 0.7.10
+    hooks:
+      - id: uv-lock
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
