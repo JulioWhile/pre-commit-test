@@ -41,13 +41,13 @@ jobs:
           # Install project dependencies if requirements.txt exists
           if [ -f "requirements.txt" ]; then
             echo "📦 Installing project dependencies with UV..."
-            uv pip install -r requirements.txt
+            uv pip install --system -r requirements.txt
           fi
 
           # Install dev dependencies if requirements-dev.txt exists
           if [ -f "requirements-dev.txt" ]; then
             echo "🔧 Installing dev dependencies with UV..."
-            uv pip install -r requirements-dev.txt
+            uv pip install --system -r requirements-dev.txt
           fi
 
       - name: Install pre-commit with UV
