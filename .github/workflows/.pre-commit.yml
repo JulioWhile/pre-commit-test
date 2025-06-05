@@ -17,13 +17,21 @@ jobs:
         with:
           fetch-depth: 0  # Important for getting full git history
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
-      - name: Install pre-commit
-        run: pip install pre-commit
+      - name: Set up Python with UV
+        run: |
+          uv python install 3.11
+          uv python pin 3.11
+
+      - name: Install dependencies
+        run: |
+          uv sync --frozen
+          uv pip install pre-commit
 
       - name: Get changed files (for PR)
         if: github.event_name == 'pull_request'
@@ -55,13 +63,6 @@ jobs:
 
             # Force pre-commit to run without cache to avoid "skipped" issues
             export PRE_COMMIT_NO_CACHE=1
-
-            # Capture output for PR comment
-            echo "files_checked=true" >> $GITHUB_OUTPUT
-
-            # Run with verbose output and capture both stdout and stderr
-            if xargs pre-commit run --verbose --files < filtered_files.txt > precommit_output.txt 2>&1; then
-              echo "result=success" >> $GITHUB_OUTPUT
               echo "✅ All pre-commit checks passed!"
             else
               echo "result=failure" >> $GITHUB_OUTPUT
@@ -70,9 +71,9 @@ jobs:
               echo ""
               echo "To fix locally, run:"
               if [ "${{ github.event_name }}" == "pull_request" ]; then
-                echo "  pre-commit run --files \$(git diff --name-only origin/${{ github.base_ref }}...HEAD)"
+                echo "  uv run pre-commit run --files \$(git diff --name-only origin/${{ github.base_ref }}...HEAD)"
               else
-                echo "  pre-commit run --files \$(git diff --name-only HEAD~1 HEAD)"
+                echo "  uv run pre-commit run --files \$(git diff --name-only HEAD~1 HEAD)"
               fi
             fi
           else
