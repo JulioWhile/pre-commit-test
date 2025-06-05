@@ -4,6 +4,10 @@ on:
   push:
     branches: [main, develop]
 
+permissions:
+  contents: read
+  pull-requests: write  # Required for commenting on PRs
+
 jobs:
   quality-check:
     runs-on: ubuntu-latest
@@ -51,17 +55,17 @@ jobs:
           cat filtered_files.txt || echo "No filtered_files.txt"
 
       - name: Run pre-commit checks
+        id: precommit
+        continue-on-error: true  # Don't fail the job yet, we want to comment first
         run: |
           if [ -s filtered_files.txt ]; then
             echo "🔍 Running pre-commit checks on changed files..."
 
             # Force pre-commit to run without cache to avoid "skipped" issues
             export PRE_COMMIT_NO_CACHE=1
-
-            # Run with verbose output to see what's happening
-            if uv run pre-commit run --verbose --files < filtered_files.txt; then
               echo "✅ All pre-commit checks passed!"
             else
+              echo "result=failure" >> $GITHUB_OUTPUT
               echo ""
               echo "❌ Pre-commit checks failed!"
               echo ""
@@ -71,8 +75,186 @@ jobs:
               else
                 echo "  uv run pre-commit run --files \$(git diff --name-only HEAD~1 HEAD)"
               fi
-              exit 1
             fi
           else
+            echo "files_checked=false" >> $GITHUB_OUTPUT
+            echo "result=no_files" >> $GITHUB_OUTPUT
             echo "ℹ️  No relevant files to check."
           fi
+
+      - name: Comment on PR - Success
+        if: github.event_name == 'pull_request' && steps.precommit.outputs.files_checked == 'true' && steps.precommit.outputs.result == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Read the list of checked files
+            let checkedFiles = '';
+            try {
+              checkedFiles = fs.readFileSync('filtered_files.txt', 'utf8').trim();
+            } catch (e) {
+              checkedFiles = 'Unable to read file list';
+            }
+
+            const fileCount = checkedFiles.split('\n').filter(f => f.trim()).length;
+
+            const comment = `## ✅ Pre-commit Quality Checks Passed!
+
+            **Files checked:** ${fileCount} file(s)
+            \`\`\`
+            ${checkedFiles}
+            \`\`\`
+
+            All quality checks have passed successfully! 🎉`;
+
+            // Find existing comment to update or create new one
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existingComment = comments.find(comment =>
+              comment.body.includes('Pre-commit Quality Checks')
+            );
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
+
+      - name: Comment on PR - Failure
+        if: github.event_name == 'pull_request' && steps.precommit.outputs.files_checked == 'true' && steps.precommit.outputs.result == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Read the output from pre-commit
+            let output = '';
+            try {
+              output = fs.readFileSync('precommit_output.txt', 'utf8');
+            } catch (e) {
+              output = 'Unable to read pre-commit output';
+            }
+
+            // Read the list of checked files
+            let checkedFiles = '';
+            try {
+              checkedFiles = fs.readFileSync('filtered_files.txt', 'utf8').trim();
+            } catch (e) {
+              checkedFiles = 'Unable to read file list';
+            }
+
+            const fileCount = checkedFiles.split('\n').filter(f => f.trim()).length;
+
+            const comment = `## ❌ Pre-commit Quality Checks Failed
+
+            **Files checked:** ${fileCount} file(s)
+
+            ### 🔧 How to fix locally:
+            \`\`\`bash
+            # Check specific files that failed
+            pre-commit run --files $(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+
+            # Or run on all changed files
+            pre-commit run --all-files
+            \`\`\`
+
+            ### 📋 Detailed Output:
+            <details>
+            <summary>Click to expand full pre-commit output</summary>
+
+            \`\`\`
+            ${output.length > 8000 ? output.substring(0, 8000) + '\n... (output truncated)' : output}
+            \`\`\`
+            </details>
+
+            ### 📁 Files that were checked:
+            \`\`\`
+            ${checkedFiles}
+            \`\`\`
+
+            Please fix the issues above and push your changes. The checks will run again automatically.`;
+
+            // Find existing comment to update or create new one
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existingComment = comments.find(comment =>
+              comment.body.includes('Pre-commit Quality Checks')
+            );
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
+
+      - name: Comment on PR - No Files
+        if: github.event_name == 'pull_request' && steps.precommit.outputs.files_checked == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = `## ℹ️ Pre-commit Quality Checks - No Relevant Files
+
+            No Python, YAML, JSON, or CSV files were changed in this PR.
+            Quality checks were skipped. ✨`;
+
+            // Find existing comment to update or create new one
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existingComment = comments.find(comment =>
+              comment.body.includes('Pre-commit Quality Checks')
+            );
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
+
+      - name: Final status check
+        if: steps.precommit.outputs.files_checked == 'true' && steps.precommit.outputs.result == 'failure'
+        run: |
+          echo "❌ Pre-commit checks failed. See PR comment for details."
+          exit 1

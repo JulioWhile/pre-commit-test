@@ -6,8 +6,9 @@ def foo(a, b):
 
 
 def bar():
-    _temp = 42  # allowed, underscore-prefixed
-    print("something")  # bad spacing, single->double quote
+    _temp = 42
+    _not_used = 5
+    print("something")
 
 
 foo(1, 2)
